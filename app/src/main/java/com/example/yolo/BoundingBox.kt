@@ -1,5 +1,7 @@
 package com.example.yolo
 
+import android.graphics.Color
+
 data class BoundingBox(
     val x1: Float,
     val y1: Float,
@@ -11,5 +13,6 @@ data class BoundingBox(
     val h: Float,
     val cnf: Float,
     val cls: Int,
-    val clsName: String
+    val clsName: String,
+    var color: Int = Color.TRANSPARENT
 )

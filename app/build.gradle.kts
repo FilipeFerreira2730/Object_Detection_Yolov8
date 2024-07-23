@@ -51,12 +51,10 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit.v115)
     androidTestImplementation(libs.androidx.espresso.core.v351)
-
     val cameraxVersion = "1.4.0-alpha03"
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
-
     implementation(libs.tensorflow.lite)
     implementation(libs.tensorflow.lite.support)
 }

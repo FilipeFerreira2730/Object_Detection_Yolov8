@@ -50,7 +50,7 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
         if (allPermissionsGranted()) {
             startCamera()
         } else {
-            ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
+            requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
@@ -59,7 +59,7 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
-            cameraProvider  = cameraProviderFuture.get()
+            cameraProvider = cameraProviderFuture.get()
             bindCameraUseCases()
         }, ContextCompat.getMainExecutor(this))
     }
@@ -69,12 +69,11 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
 
         val rotation = binding.viewFinder.display.rotation
 
-        val cameraSelector = CameraSelector
-            .Builder()
+        val cameraSelector = CameraSelector.Builder()
             .requireLensFacing(CameraSelector.LENS_FACING_BACK)
             .build()
 
-        preview =  Preview.Builder()
+        preview = Preview.Builder()
             .setTargetAspectRatio(AspectRatio.RATIO_4_3)
             .setTargetRotation(rotation)
             .build()
@@ -82,7 +81,7 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
         imageAnalyzer = ImageAnalysis.Builder()
             .setTargetAspectRatio(AspectRatio.RATIO_4_3)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .setTargetRotation(binding.viewFinder.display.rotation)
+            .setTargetRotation(rotation)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .build()
 
@@ -98,13 +97,12 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
 
             val matrix = Matrix().apply {
                 postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
-
                 if (isFrontCamera) {
                     postScale(
                         -1f,
                         1f,
-                        imageProxy.width.toFloat(),
-                        imageProxy.height.toFloat()
+                        imageProxy.width.toFloat() / 2f,
+                        imageProxy.height.toFloat() / 2f
                     )
                 }
             }
@@ -128,7 +126,7 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
             )
 
             preview?.setSurfaceProvider(binding.viewFinder.surfaceProvider)
-        } catch(exc: Exception) {
+        } catch (exc: Exception) {
             Log.e(TAG, "Use case binding failed", exc)
         }
     }
@@ -150,7 +148,7 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
 
     override fun onResume() {
         super.onResume()
-        if (allPermissionsGranted()){
+        if (allPermissionsGranted()) {
             startCamera()
         } else {
             requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
@@ -160,9 +158,9 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
     companion object {
         private const val TAG = "Camera"
         private const val REQUEST_CODE_PERMISSIONS = 10
-        private val REQUIRED_PERMISSIONS = mutableListOf (
+        private val REQUIRED_PERMISSIONS = arrayOf(
             Manifest.permission.CAMERA
-        ).toTypedArray()
+        )
     }
 
     override fun onEmptyDetect() {
@@ -177,50 +175,50 @@ class MainActivity : AppCompatActivity(), Detector.DetectorListener {
                 invalidate()
             }
         }
-        // Verificação adicional para depuração
         Log.d(TAG, "Number of bounding boxes detected: ${boundingBoxes.size}")
 
-        // Salvar todos os boundingBoxes em XML
         if (boundingBoxes.isNotEmpty()) {
             saveBoundingBoxesToXml(boundingBoxes)
         }
     }
 
-
     private fun saveBoundingBoxesToXml(boundingBoxes: List<BoundingBox>) {
+        val filePath = "${getExternalFilesDir(null)?.absolutePath}/bounding_boxes.xml"
+        val file = File(filePath)
+
         try {
-            // Caminho para salvar o arquivo XML no diretório de arquivos externos do aplicativo
-            val filePath = getExternalFilesDir(null)?.absolutePath + "/bounding_boxes.xml"
-            val file = File(filePath)
-            val fileOutputStream = FileOutputStream(file)
-            val writer = OutputStreamWriter(fileOutputStream)
+            file.parentFile?.mkdirs()
 
-            val xmlSerializer: XmlSerializer = Xml.newSerializer()
-            xmlSerializer.setOutput(writer)
-            xmlSerializer.startDocument("UTF-8", true)
-            xmlSerializer.setFeature("http://xmlpull.org/v1/doc/features.html#indent-output", true)
-            xmlSerializer.startTag(null, "BoundingBoxes")
+            FileOutputStream(file).use { fileOutputStream ->
+                OutputStreamWriter(fileOutputStream).use { writer ->
+                    val xmlSerializer: XmlSerializer = Xml.newSerializer()
+                    xmlSerializer.setOutput(writer)
+                    xmlSerializer.startDocument("UTF-8", true)
+                    xmlSerializer.setFeature("http://xmlpull.org/v1/doc/features.html#indent-output", true)
+                    xmlSerializer.startTag(null, "BoundingBoxes")
 
-            for (boundingBox in boundingBoxes) {
-                xmlSerializer.startTag(null, "BoundingBox")
+                    for (boundingBox in boundingBoxes) {
+                        xmlSerializer.startTag(null, "BoundingBox")
 
-                xmlSerializer.startTag(null, "clsName")
-                xmlSerializer.text(boundingBox.clsName)
-                xmlSerializer.endTag(null, "clsName")
+                        xmlSerializer.startTag(null, "clsName")
+                        xmlSerializer.text(boundingBox.clsName)
+                        xmlSerializer.endTag(null, "clsName")
 
-                xmlSerializer.endTag(null, "BoundingBox")
+                        xmlSerializer.startTag(null, "color")
+                        xmlSerializer.text(binding.overlay.getColorName(boundingBox.color))
+                        xmlSerializer.endTag(null, "color")
+
+                        xmlSerializer.endTag(null, "BoundingBox")
+                    }
+
+                    xmlSerializer.endTag(null, "BoundingBoxes")
+                    xmlSerializer.endDocument()
+
+                    Log.d(TAG, "File saved at: ${file.absolutePath}")
+                }
             }
-
-            xmlSerializer.endTag(null, "BoundingBoxes")
-            xmlSerializer.endDocument()
-
-            writer.flush()
-            writer.close()
-            fileOutputStream.close()
-
-            Log.d(TAG, "File saved at: ${file.absolutePath}")
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Error saving bounding boxes to XML", e)
         }
     }
 }

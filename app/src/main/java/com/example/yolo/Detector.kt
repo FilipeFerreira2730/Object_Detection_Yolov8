@@ -2,6 +2,7 @@ package com.example.yolo
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.SystemClock
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
@@ -33,7 +34,7 @@ class Detector(
 
     private val imageProcessor = ImageProcessor.Builder()
         .add(NormalizeOp(INPUT_MEAN, INPUT_STANDARD_DEVIATION))
-        .add(CastOp(INPUT_IMAGE_TYPE))
+        .add(CastOp(DataType.FLOAT32)) // Define o tipo de dado diretamente
         .build()
 
     fun setup() {
@@ -74,10 +75,7 @@ class Detector(
 
     fun detect(frame: Bitmap) {
         interpreter ?: return
-        if (tensorWidth == 0) return
-        if (tensorHeight == 0) return
-        if (numChannel == 0) return
-        if (numElements == 0) return
+        if (tensorWidth == 0 || tensorHeight == 0 || numChannel == 0 || numElements == 0) return
 
         var inferenceTime = SystemClock.uptimeMillis()
 
@@ -88,7 +86,7 @@ class Detector(
         val processedImage = imageProcessor.process(tensorImage)
         val imageBuffer = processedImage.buffer
 
-        val output = TensorBuffer.createFixedSize(intArrayOf(1 , numChannel, numElements), OUTPUT_IMAGE_TYPE)
+        val output = TensorBuffer.createFixedSize(intArrayOf(1, numChannel, numElements), DataType.FLOAT32)
         interpreter?.run(imageBuffer, output.buffer)
 
         val bestBoxes = bestBox(output.floatArray)
@@ -99,10 +97,34 @@ class Detector(
             return
         }
 
+        // Calcular a cor predominante para cada caixa delimitadora
+        bestBoxes.forEach {
+            it.color = calculateDominantColor(frame, it)
+        }
+
         detectorListener.onDetect(bestBoxes, inferenceTime)
     }
 
-    private fun bestBox(array: FloatArray) : List<BoundingBox>? {
+    private fun calculateDominantColor(bitmap: Bitmap, box: BoundingBox): Int {
+        val left = (box.x1 * bitmap.width).toInt()
+        val top = (box.y1 * bitmap.height).toInt()
+        val width = ((box.x2 - box.x1) * bitmap.width).toInt()
+        val height = ((box.y2 - box.y1) * bitmap.height).toInt()
+
+        val croppedBitmap = Bitmap.createBitmap(bitmap, left, top, width, height)
+        val colorCount = mutableMapOf<Int, Int>()
+
+        for (x in 0 until croppedBitmap.width) {
+            for (y in 0 until croppedBitmap.height) {
+                val pixelColor = croppedBitmap.getPixel(x, y)
+                colorCount[pixelColor] = colorCount.getOrDefault(pixelColor, 0) + 1
+            }
+        }
+
+        return colorCount.maxByOrNull { it.value }?.key ?: Color.TRANSPARENT
+    }
+
+    private fun bestBox(array: FloatArray): List<BoundingBox>? {
         val boundingBoxes = mutableListOf<BoundingBox>()
 
         for (c in 0 until numElements) {
@@ -110,7 +132,7 @@ class Detector(
             var maxIdx = -1
             var j = 4
             var arrayIdx = c + numElements * j
-            while (j < numChannel){
+            while (j < numChannel) {
                 if (array[arrayIdx] > maxConf) {
                     maxConf = array[arrayIdx]
                     maxIdx = j - 4
@@ -125,10 +147,10 @@ class Detector(
                 val cy = array[c + numElements] // 1
                 val w = array[c + numElements * 2]
                 val h = array[c + numElements * 3]
-                val x1 = cx - (w/2F)
-                val y1 = cy - (h/2F)
-                val x2 = cx + (w/2F)
-                val y2 = cy + (h/2F)
+                val x1 = cx - (w / 2F)
+                val y1 = cy - (h / 2F)
+                val x2 = cx + (w / 2F)
+                val y2 = cy + (h / 2F)
                 if (x1 < 0F || x1 > 1F) continue
                 if (y1 < 0F || y1 > 1F) continue
                 if (x2 < 0F || x2 > 1F) continue
@@ -149,11 +171,11 @@ class Detector(
         return applyNMS(boundingBoxes)
     }
 
-    private fun applyNMS(boxes: List<BoundingBox>) : MutableList<BoundingBox> {
+    private fun applyNMS(boxes: List<BoundingBox>): MutableList<BoundingBox> {
         val sortedBoxes = boxes.sortedByDescending { it.cnf }.toMutableList()
         val selectedBoxes = mutableListOf<BoundingBox>()
 
-        while(sortedBoxes.isNotEmpty()) {
+        while (sortedBoxes.isNotEmpty()) {
             val first = sortedBoxes.first()
             selectedBoxes.add(first)
             sortedBoxes.remove(first)
@@ -188,11 +210,10 @@ class Detector(
     }
 
     companion object {
-        private const val INPUT_MEAN = 0f
-        private const val INPUT_STANDARD_DEVIATION = 255f
-        private val INPUT_IMAGE_TYPE = DataType.FLOAT32
-        private val OUTPUT_IMAGE_TYPE = DataType.FLOAT32
-        private const val CONFIDENCE_THRESHOLD = 0.3F
-        private const val IOU_THRESHOLD = 0.5F
+        private const val INPUT_MEAN = 0.0f
+        private const val INPUT_STANDARD_DEVIATION = 255.0f
+
+        private const val CONFIDENCE_THRESHOLD = 0.4F
+        private const val IOU_THRESHOLD = 0.4F
     }
 }
